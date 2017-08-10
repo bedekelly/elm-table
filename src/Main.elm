@@ -4,7 +4,7 @@ import Date exposing (fromString)
 import Date.Extra.Config.Config_en_gb
 import Date.Extra.Format as Date
 import Html exposing (Html, div, h1, input, node, tbody, td, text, th, thead, tr, h3, header)
-import Html.Attributes exposing (autofocus, class, href, id, rel, src, title, type_)
+import Html.Attributes exposing (autofocus, class, href, id, rel, src, title, type_, placeholder, name)
 import Html.Events exposing (onInput, onClick)
 import Http
 import Json.Decode exposing (at, field, int, keyValuePairs, list, map4, string)
@@ -148,13 +148,14 @@ title =
 
 searchbar : Html Msg
 searchbar =
-    input [ type_ "text", onInput Input, class "u-full-width", autofocus True ] []
+    input [ type_ "text", onInput Input, class "u-full-width", autofocus True, placeholder "Search categories, descriptions..." ] []
 
 
 view : Model -> Html.Html Msg
 view model =
     div []
-        [ styles
+        [ meta
+        , styles
         , content model
         ]
 
@@ -302,3 +303,8 @@ script url =
 styles : Html msg
 styles =
     div [ id "styles" ] (List.map stylesheet stylesheets)
+
+
+meta : Html msg
+meta =
+    Html.node "meta" [ name "viewport", Html.Attributes.content "width=device-width, initial-scale=1" ] []
