@@ -1,10 +1,13 @@
 module Main exposing (..)
 
-import Json.Decode exposing (keyValuePairs, at, int, list, field, string, map4)
-import Html exposing (div, text, td, tr, thead, tbody, th, input, h1)
-import Html.Attributes exposing (type_)
-import Html.Events exposing (onInput)
+import Date exposing (fromString)
+import Date.Extra.Config.Config_en_gb
+import Date.Extra.Format as Date
+import Html exposing (Html, div, h1, input, node, tbody, td, text, th, thead, tr, h3, header)
+import Html.Attributes exposing (autofocus, class, href, id, rel, src, title, type_)
+import Html.Events exposing (onInput, onClick)
 import Http
+import Json.Decode exposing (at, field, int, keyValuePairs, list, map4, string)
 import List exposing (sortBy)
 
 
@@ -33,23 +36,31 @@ type alias Transactions =
 type alias Model =
     { transactions : Transactions
     , input : String
+    , sortCategory : Field
+    , order : Order
     }
+
+
+type Field
+    = Timestamp
+    | Amount
+
+
+type Order
+    = Ascending
+    | Descending
 
 
 type Msg
     = LoadData
     | DataLoaded (Result Http.Error Transactions)
     | Input String
+    | SortBy Field
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( model, getData )
-
-
-model : Model
-model =
-    Model [] ""
+    ( Model [] "" Timestamp Descending, getData )
 
 
 getData : Cmd Msg
@@ -64,6 +75,7 @@ getData =
         Http.send DataLoaded request
 
 
+decodeTransactions : Json.Decode.Decoder (List Transaction)
 decodeTransactions =
     field "transactions" <|
         list <|
@@ -82,8 +94,10 @@ update msg model =
 
         DataLoaded (Ok transactions) ->
             ( Model
-                (sortBy .time transactions)
+                transactions
                 model.input
+                model.sortCategory
+                model.order
             , Cmd.none
             )
 
@@ -91,66 +105,200 @@ update msg model =
             ( model, getData )
 
         Input txt ->
-            ( Model model.transactions txt, Cmd.none )
+            ( Model model.transactions txt model.sortCategory model.order, Cmd.none )
+
+        SortBy category ->
+            if category == model.sortCategory then
+                ( { model | order = opp model.order }, Cmd.none )
+            else
+                ( { model | sortCategory = category }, Cmd.none )
 
 
+opp : Order -> Order
+opp c =
+    case c of
+        Ascending ->
+            Descending
+
+        Descending ->
+            Ascending
+
+
+sortedTransactions : Transactions -> Field -> Order -> Transactions
+sortedTransactions transactions key order =
+    let
+        txs =
+            case key of
+                Amount ->
+                    sortBy .amount transactions
+
+                Timestamp ->
+                    sortBy .time transactions
+    in
+        if order == Descending then
+            List.reverse txs
+        else
+            txs
+
+
+title : Html Msg
 title =
     h1 [] [ text "All Transactions" ]
 
 
+searchbar : Html Msg
 searchbar =
-    input [ type_ "text", onInput Input ] []
+    input [ type_ "text", onInput Input, class "u-full-width", autofocus True ] []
 
 
 view : Model -> Html.Html Msg
 view model =
     div []
-        [ title
-        , searchbar
-        , list2Table model
+        [ styles
+        , content model
         ]
 
 
+content : Model -> Html Msg
+content model =
+    div [ class "container" ]
+        [ topContainer
+        , loadingOrTable model
+        ]
+
+
+topContainer : Html Msg
+topContainer =
+    header [ class "u-full-width" ]
+        [ title
+        , searchbar
+        ]
+
+
+loadingOrTable : Model -> Html Msg
+loadingOrTable model =
+    let
+        content =
+            case model.transactions of
+                [] ->
+                    h3 [] [ text "Loading..." ]
+
+                _ ->
+                    list2Table model
+    in
+        div [ class "table-container" ] [ content ]
+
+
+contains : String -> String -> Bool
+contains haystack needle =
+    String.contains (String.toLower needle) (String.toLower haystack)
+
+
+list2Table : Model -> Html Msg
 list2Table model =
     let
         txContains str tx =
-            (String.contains str tx.description) || (String.contains str tx.category)
+            (contains tx.description str) || (contains tx.category str)
+
+        unsortedTxs =
+            List.filter (txContains model.input) model.transactions
 
         txs =
-            List.filter (txContains model.input) model.transactions
+            sortedTransactions unsortedTxs model.sortCategory model.order
     in
-        Html.table []
+        Html.table [ class "u-full-width" ]
             [ thead []
                 [ tr []
                     [ th [] [ text "Category" ]
-                    , th [] [ text "Timestamp" ]
+                    , th [ onClick (SortBy Timestamp), class "order-heading" ] [ text "Timestamp" ]
                     , th [] [ text "Description" ]
-                    , th [] [ text "Amount" ]
+                    , th [ onClick (SortBy Amount), class "order-heading" ] [ text "Amount" ]
                     ]
-                , tbody []
-                    (List.map
-                        transactionRow
-                        txs
-                    )
                 ]
+            , tbody []
+                (List.map
+                    transactionRow
+                    txs
+                )
             ]
 
 
+transactionRow : Transaction -> Html Msg
 transactionRow { category, time, amount, description } =
     tr []
-        [ td [] [ text category ]
-        , td [] [ text time ]
-        , td [] [ text description ]
+        [ td [ class "category-cell" ] [ text category ]
+        , td [] [ text <| fromStamp time ]
+        , td [ Html.Attributes.title description, class "description-cell" ] [ text description ]
         , td []
-            [ text <|
-                (\x -> "£ " ++ x) <|
-                    toString <|
-                        -amount
-                            // 100
+            [ text <| currency amount
             ]
         ]
+
+
+fromStamp : String -> String
+fromStamp isoTimestamp =
+    case fromString isoTimestamp of
+        Ok date ->
+            Date.format
+                Date.Extra.Config.Config_en_gb.config
+                Date.isoDateFormat
+                date
+
+        Err _ ->
+            "-"
+
+
+currency : Int -> String
+currency amount =
+    let
+        sign =
+            if amount < 0 then
+                "- "
+            else
+                ""
+
+        pounds =
+            abs <| amount // 100
+
+        pence =
+            pencePad <| toString <| (abs amount) - (abs pounds * 100)
+    in
+        sign ++ "£ " ++ toString pounds ++ "." ++ pence
+
+
+pencePad : String -> String
+pencePad =
+    String.padLeft 2 '0'
+
+
+stylesheets : List String
+stylesheets =
+    [ "https://cdnjs.cloudflare.com/ajax/libs/normalize/7.0.0/normalize.min.css"
+    , "https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css"
+    , "static/css/style.css"
+    ]
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.none
+
+
+link : List (Html.Attribute msg) -> List (Html msg) -> Html msg
+link =
+    node "link"
+
+
+stylesheet : String -> Html msg
+stylesheet url =
+    link [ rel "stylesheet", href url ] []
+
+
+script : String -> Html msg
+script url =
+    node "script" [ src url ] []
+
+
+styles : Html msg
+styles =
+    div [ id "styles" ] (List.map stylesheet stylesheets)
