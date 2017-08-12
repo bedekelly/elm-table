@@ -36,6 +36,7 @@ type alias Transactions =
 type alias Model =
     { transactions : Transactions
     , input : String
+    , msg : String
     , sortCategory : Field
     , order : Order
     }
@@ -52,15 +53,14 @@ type Order
 
 
 type Msg
-    = LoadData
-    | DataLoaded (Result Http.Error Transactions)
+    = DataLoaded (Result Http.Error Transactions)
     | Input String
     | SortBy Field
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model [] "" Timestamp Descending, getData )
+    ( Model [] "" "Loading..." Timestamp Descending, getData )
 
 
 getData : Cmd Msg
@@ -89,23 +89,24 @@ decodeTransactions =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        LoadData ->
-            ( model, Cmd.none )
-
         DataLoaded (Ok transactions) ->
             ( Model
-                transactions
+                (Debug.log
+                    "txs"
+                    transactions
+                )
                 model.input
+                "Loaded!"
                 model.sortCategory
                 model.order
             , Cmd.none
             )
 
         DataLoaded (Err msg) ->
-            ( model, getData )
+            ( { model | msg = "Please make sure all your transactions are categorised." }, Cmd.none )
 
         Input txt ->
-            ( Model model.transactions txt model.sortCategory model.order, Cmd.none )
+            ( Model model.transactions txt "Sorting..." model.sortCategory model.order, Cmd.none )
 
         SortBy category ->
             if category == model.sortCategory then
@@ -182,7 +183,7 @@ loadingOrTable model =
         content =
             case model.transactions of
                 [] ->
-                    h3 [] [ text "Loading..." ]
+                    h3 [] [ text model.msg ]
 
                 _ ->
                     list2Table model
